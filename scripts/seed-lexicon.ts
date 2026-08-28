@@ -55,6 +55,42 @@ const TERMS: SeedTerm[] = [
   { term: "dormitorio", language: "es", speechForm: "dormitorio", notes: "bedroom. Spanish passthrough." },
   { term: "jardín", language: "es", speechForm: "jardín", notes: "garden. Spanish passthrough." },
   { term: "guaraní", language: "es", speechForm: "guaraní", notes: "the currency and the language. Final-syllable stress in both." },
+
+  // --- Added in opus-2: the vocabulary the Guaraní templates actually emit ---
+  //
+  // These are here for a structural reason, not for coverage. The §5.2
+  // detection rule flags any token in a Guaraní script that neither matches the
+  // lexicon nor sits on the Spanish-passthrough allowlist. Every Guaraní word a
+  // template produces is therefore either a lexicon entry or a false alarm, and
+  // a queue full of "ha" and "oĩ" would bury the terms that genuinely need a
+  // human — the neighbourhood and street names that arrive with each listing.
+  // Widening the allowlist instead was not an option: the rule names a SPANISH
+  // allowlist, and a Guaraní word's pronunciation is exactly what the lexicon
+  // is the single point of truth for.
+  //
+  // NOTE ON THESE SPEECH FORMS: they are the orthographic form, with stress
+  // guidance in `notes` rather than baked into a respelling. That differs from
+  // the opus-1 rows above, which carry IPA-flavoured guesses (`ɨvɨ`, `mbohapɨ`)
+  // that no engine has been heard to interpret correctly — see KNOWN-ISSUES.
+  // Respellings are engine-specific by design (plan §2), so the honest default
+  // is "say what is written" and the tuned forms belong in per-engine rows the
+  // A/B harness creates.
+  { term: "ko", language: "gn", speechForm: "ko", notes: "this (demonstrative). Opens the standard listing sentence." },
+  { term: "oĩ", language: "gn", speechForm: "oĩ", notes: "is/is located. Nasal ĩ; final-syllable stress." },
+  { term: "pe", language: "gn", speechForm: "pe", notes: "locative suffix, written attached: 'San Vicente-pe'. The tokenizer splits on the hyphen, so it is looked up on its own." },
+  { term: "orekóva", language: "gn", speechForm: "orekóva", notes: "which has. Stress on kó, marked by the accent." },
+  { term: "oguereko", language: "gn", speechForm: "oguereko", notes: "it has. Final-syllable stress; a Spanish engine will want to stress 're' instead — first candidate for a per-engine respelling." },
+  { term: "ovende", language: "gn", speechForm: "ovende", notes: "it is being sold. Jopara: Spanish 'vender' with the Guaraní o- prefix." },
+  { term: "hína", language: "gn", speechForm: "hína", notes: "progressive marker. Stress on hí, marked." },
+  { term: "rehe", language: "gn", speechForm: "rehe", notes: "for/at (postposition). Final-syllable stress." },
+  { term: "ha", language: "gn", speechForm: "ha", notes: "and. The commonest word in any Guaraní script." },
+  { term: "avei", language: "gn", speechForm: "avei", notes: "also/as well. Final-syllable stress." },
+  { term: "ikatu", language: "gn", speechForm: "ikatu", notes: "it is possible / you can. Final-syllable stress." },
+  { term: "reñe'ẽ", language: "gn", speechForm: "reñe'ẽ", notes: "you speak. Glottal stop then nasal ẽ — the hardest sequence in the call-to-action line; most engines drop the glottal. Check this one first." },
+  { term: "oreve", language: "gn", speechForm: "oreve", notes: "to us. Final-syllable stress." },
+  { term: "rupive", language: "gn", speechForm: "rupive", notes: "by means of / via. Used as 'WhatsApp rupive'." },
+  { term: "irundy", language: "gn", speechForm: "irundy", notes: "four. Final y is /ɨ/. Emitted by the count verbalizer for 4 rooms." },
+  { term: "po", language: "gn", speechForm: "po", notes: "five. Emitted by the count verbalizer for 5 rooms; also means 'hand'." },
 ];
 
 async function main(): Promise<void> {

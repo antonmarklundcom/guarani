@@ -13,7 +13,11 @@
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
     "seed:lexicon": "tsx scripts/seed-lexicon.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "seed:voices": "tsx scripts/seed-voices.ts",
+    "seed:sample": "tsx scripts/seed-sample-listing.ts",
+    "script:generate": "tsx scripts/generate-script.ts",
+    "ab:run": "tsx scripts/run-ab-harness.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1120.0",

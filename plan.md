@@ -4,8 +4,8 @@ Phase table (fill in as phases complete):
 
 | Phase | Model | Prompt file | Plan sections |
 |---|---|---|---|
-| opus-1 | Opus | prompts/opus-1-foundation.md | §2, §5.1 |
-| opus-2 | Opus | prompts/opus-2-script-voice.md | §5.2 |
+| opus-1 ✅ | Opus | prompts/opus-1-foundation.md | §2, §5.1 |
+| opus-2 ✅ | Opus | prompts/opus-2-script-voice.md | §5.2 |
 | opus-3 | Opus | prompts/opus-3-assembly.md | §5.3 |
 | opus-4 | Opus | prompts/opus-4-visuals.md | §5.4 |
 | sonnet-1 | Sonnet | prompts/sonnet-1-admin-dashboard.md | §6.1 |
@@ -270,6 +270,159 @@ migrate. Three choices worth flagging for opus-2:
    submits jobs in parallel.
 5. The gate table above must be filled in before opus-2's work has a foundation worth
    building on.
+
+### opus-2-script-voice — 2026-08-28
+
+**Delivered**: script generation (ES + GN) from `listings` fields with number/
+price/unit verbalization; the §5.2 unresolved-terms rule; per-line TTS
+orchestration with local ffprobe measurement, storage archival and USD cost
+accounting; the standalone Guaraní TTS route (`POST /api/tts`); and the
+per-engine A/B harness. 114 tests green; `npm run typecheck`, `npm run lint`,
+`npm run build` all pass.
+
+The phase ran against a **real database and real ffmpeg** — MariaDB 10.11 and
+ffmpeg both install cleanly in the build container — so most of what opus-1 had
+to leave unproven is now proven by execution rather than by argument. See
+KNOWN-ISSUES 2, 3 and 5, all closed or narrowed.
+
+#### The pipeline, as it actually ran
+
+Generated from the seeded sample listing (project 1 — Barrio San Vicente,
+Gs. 850.000.000, 3 rooms, 2 baths, 120 m², garaje + jardín; figures chosen to
+match the plan's own gate sentences):
+
+| # | Caption (`display_text`) | Narration (`speech_text`) |
+|---|---|---|
+| 1 | Ko propiedad oĩ Barrio San Vicente-pe, Asunción-pe. | *(unchanged — proper nouns unresolved)* |
+| 2 | Tapé: Avenida Mariscal López 1234. | Tapé: Avenida Mariscal López mil doscientos treinta y cuatro. |
+| 3 | Orekóva 3 koty ha 2 baño. | Orekóva mbohapɨ kotý ha mokõi baño. |
+| 4 | Oguereko 120 m², garaje ha jardín. | Oguereko ciento veinte metros cuadrados, garaje ha jardín. |
+| 5 | Ovende hína Gs. 850.000.000 rehe. | Ovende hína ochocientos cincuenta millones de guaraníes rehe. |
+| 6 | Ikatu reñe'ẽ oreve WhatsApp rupive. | Ikatu reñe'ẽ oreve WhatsApp rupive. |
+
+Unresolved terms queued from that run: **San, Vicente, Asunción, Mariscal,
+López** — exactly the proper nouns, and nothing else. Lines 1 and 2 are flagged
+`provisional`; the other four are clean.
+
+#### Decisions worth knowing about
+
+**Guaraní numerals for counts, Spanish for prices.** Guaraní has native cardinals
+for the low numbers, and every speaker in the country borrows Spanish for prices,
+areas and years. The plan's own gate sentences do exactly this ("mbohapy koty ha
+mokõi baño" beside "ochocientos cincuenta millones de guaraníes"), so the
+verbalizer encodes it: native numerals 1–5, Spanish above, Spanish always for
+money and area. That threshold is the one judgement call in the verbalizer and a
+speaker should confirm it (KNOWN-ISSUES 8).
+
+**The lexicon had to grow before the detection rule was usable.** The §5.2 rule
+flags any Guaraní token that is neither a lexicon entry nor on the Spanish
+allowlist — which means every Guaraní function word a template emits ("ha",
+"oĩ", "rehe") would be flagged on every single run, burying the proper nouns
+that actually need a human. Widening the allowlist was not an option: the rule
+names a *Spanish* allowlist, and a Guaraní word's pronunciation is precisely
+what the lexicon is the single point of truth for. So the seed grew by 16 terms
+covering the template vocabulary. The queue above is the result: five proper
+nouns, no noise.
+
+**Street numbers go through verbalization too.** The first run flagged `1234`
+from the address — a number reaching an engine as digits, read out however it
+liked. `verbalizeEmbeddedNumbers` now spells digit runs inside free-text fields
+while the caption keeps the digits. Runs longer than six digits are left alone;
+a phone number read as one cardinal is worse than one read as digits.
+
+**No HTTP transport was written.** See KNOWN-ISSUES 1 — the docs host is still
+refused by the egress policy, and inventing a wire format would have produced
+code that passes its own tests and fails on the first real call.
+
+#### Real-synthesis sanity run
+
+Six lines, two engines, voice held constant at `Marisol`
+(`75e72cd5-011b-4130-a474-e8b1ab341f04`) — the same preset opus-1 used, so these
+are directly comparable with the gate samples.
+
+The run deliberately pairs each sentence **with and without opus-1's
+IPA-flavoured respellings**, because whether those forms help or hurt is an open
+question that only listening can settle (KNOWN-ISSUES 7).
+
+| # | Engine | Text sent | Result |
+|---|---|---|---|
+| 0 | elevenlabs | Orekóva **mbohapɨ kotý** ha mokõi baño. | `hf_20260828_141445_4d0e0cb7-51a7-498a-ada8-57e17ecdd528.mp3` |
+| 1 | elevenlabs | Orekóva **mbohapy koty** ha mokõi baño. | `hf_20260828_141444_25fee3f3-d7df-46a8-bdf8-933717754536.mp3` |
+| 2 | minimax | Orekóva **mbohapɨ kotý** ha mokõi baño. | `hf_20260828_141444_7ca3f711-6738-4b0b-ba68-b657d3eedcda.mp3` |
+| 3 | minimax | Orekóva **mbohapy koty** ha mokõi baño. | `hf_20260828_141444_62f19ca9-08a8-4fc4-a034-88966d6865cd.mp3` |
+| 4 | elevenlabs | Ovende hína ochocientos cincuenta millones de guaraníes rehe. | `hf_20260828_141444_f08ee6d1-fb34-4255-b7ea-b4d4ae14406b.mp3` |
+| 5 | elevenlabs | Ubicada en Avenida Mariscal López mil doscientos treinta y cuatro. | `hf_20260828_141444_aae94678-3384-4980-b57d-d7fb70567a3a.mp3` |
+
+Base: `https://d8j0ntlcm91z4.cloudfront.net/user_349VrHjTFIpx9q71lpfpAXcLXvR/`
+
+**Cost: 1.2 credits total**, itemized from the provider's own transaction log:
+2 × 0.30 and 4 × 0.15. USD is deliberately **not** recorded — see below.
+
+Pairs 0/1 and 2/3 are the ones to listen to first: same sentence, same engine,
+only the respelling differs. If the plain orthography wins, opus-1's `default`
+speech forms should be rewritten before the lexicon grows any further on top of
+them.
+
+#### Two cost findings
+
+**TTS is priced by text length, not by engine.** The four short sentences cost
+0.15 each and the two long ones 0.30, across both engines — opus-1's per-engine
+table was really measuring its single ~90-character probe sentence. A 12-line
+bilingual video is still in the ~5–7 credit range, so the headline number holds;
+the model behind it does not.
+
+**The account is shared, so balance deltas mean nothing here.** During this run
+the balance fell 631 credits while this project spent 1.2 — the rest was
+concurrent Seedance 2.5 video generation (45–72 credits a job) from other work
+on the same account. Per-job accounting in `generation_jobs` is the only honest
+attribution. Logged as KNOWN-ISSUES 9 so nobody later "improves" sonnet-3's cost
+dashboard into a balance diff.
+
+#### `cost_usd` is null until Anton sets one number
+
+`provider_rates` is seeded only when `HIGGSFIELD_USD_PER_CREDIT` is set, and it
+is not set. Credits are recorded on every job regardless, so a rate added later
+re-prices the whole history.
+
+The rate is left to Anton on purpose: these credits come out of a monthly plan
+allowance that is already paid for, so the honest marginal rate is **that plan's
+price divided by its monthly credit allowance** — a number only the account
+holder knows. Baking in a credit-top-up price would describe a purchase that is
+not how these credits are bought, and would silently overstate the cost of every
+video. Set it in `.env` and re-run `npm run seed:voices`.
+
+#### The go/no-go gate is still open
+
+opus-1 left the §9 listening table empty rather than inventing impressions, and
+**it is still empty.** Nothing in opus-2 closed it: this session could not listen
+either, and the CDN remains unreachable from here (KNOWN-ISSUES 4), so the audio
+could not even be archived.
+
+This was not treated as a blocker, because the phase prompt directs opus-2 to
+execute and §4 reserves stopping for missing credentials and foundational
+schema decisions. But it should be said plainly: **four phases of build now rest
+on an acceptability judgement nobody has made.** The six URLs above, plus the
+twelve from opus-1, are the material. The listening is a person's job, ideally
+the §7 Guaraní speaker's, and Anton's "would I send this to an agent" is a valid
+first filter.
+
+#### Where opus-3 should look first
+
+1. `src/tts/synthesize.ts` — `SynthesisResult.offsets` is the caption timeline,
+   already computed from ffprobe-measured per-line durations. It is null unless
+   *every* line was measured, deliberately: a partial timeline desynchronizes
+   silently, which is worse than an obviously absent one.
+2. `src/ports.ts` — services take repositories as parameters and nothing outside
+   `src/db/` imports the schema. The worker should follow the same rule.
+3. `listing_media` holds the photos; `DrizzleJobRepository` is the pattern for
+   logging a render job, and `videos.total_cost_usd` rolls up from
+   `generation_jobs.cost_usd`.
+4. KNOWN-ISSUES 6 (accent-insensitive lexicon keys) is the one open item worth a
+   migration window, and opus-3 is the last Opus phase before the Sonnet phases
+   are forbidden from schema changes entirely.
+5. `GUARANI_TTS_PROVIDER=mock` runs the whole pipeline end to end with real,
+   measurable audio and zero credits — the mock provider returns a genuine WAV
+   as a data URL. Use it for worker development.
 
 ## 10. Backlog
 

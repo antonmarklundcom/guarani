@@ -11,6 +11,10 @@
  * and flags the result as not-durable so callers can record that truthfully.
  */
 
+import { createHash } from "node:crypto";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { storageEnv } from "@/config/env";
 
@@ -41,6 +45,10 @@ function client(): S3Client | null {
   return new S3Client({
     region: env.region,
     endpoint: env.endpoint,
+    // Path-style addressing: R2 and every other S3-compatible endpoint accept
+    // it, whereas virtual-host style requires per-bucket DNS that a custom
+    // endpoint generally does not have.
+    forcePathStyle: true,
     credentials: {
       accessKeyId: env.accessKeyId,
       secretAccessKey: env.secretAccessKey,
@@ -79,16 +87,97 @@ export async function archiveArtifact(
 
   const body = new Uint8Array(await response.arrayBuffer());
 
+  return put(s3, env, key, body, response.headers.get("content-type"));
+}
+
+/**
+ * Puts a file that is already on local disk into our bucket.
+ *
+ * opus-2 needs this because the TTS pipeline has to touch the bytes on the way
+ * past: every line's duration is measured locally with ffprobe (plan §3.3), and
+ * ffprobe reads a file, not a buffer. Downloading once to a temp file, probing
+ * it, and uploading from there beats fetching the same artifact twice.
+ */
+export async function archiveLocalFile(
+  filePath: string,
+  key: string,
+  contentType?: string,
+): Promise<StoredArtifact> {
+  const env = storageEnv();
+  const s3 = client();
+
+  if (!env || !s3) {
+    warnOnce();
+    return { url: filePath, durable: false };
+  }
+
+  return put(s3, env, key, await readFile(filePath), contentType ?? null);
+}
+
+async function put(
+  s3: S3Client,
+  env: NonNullable<ReturnType<typeof storageEnv>>,
+  key: string,
+  body: Uint8Array,
+  contentType: string | null,
+): Promise<StoredArtifact> {
   await s3.send(
     new PutObjectCommand({
       Bucket: env.bucket,
       Key: key,
       Body: body,
-      ContentType:
-        response.headers.get("content-type") ?? "application/octet-stream",
+      ContentType: contentType ?? "application/octet-stream",
     }),
   );
 
   const base = env.publicBaseUrl ?? `${env.endpoint.replace(/\/$/, "")}/${env.bucket}`;
   return { url: `${base}/${key}`, durable: true, bytes: body.byteLength };
+}
+
+export type DownloadedArtifact = {
+  path: string;
+  contentType: string | null;
+  /**
+   * Removes the temp directory. Callers MUST invoke this — one file per script
+   * line per render adds up on a long-lived worker host, and nothing else ever
+   * reclaims them.
+   */
+  cleanup: () => Promise<void>;
+};
+
+/**
+ * Downloads an artifact to a temp file so it can be measured before it is
+ * archived. Separate from the upload half because a caller with no storage
+ * configured still needs the local file for ffprobe.
+ */
+export async function downloadToTempFile(
+  sourceUrl: string,
+  suggestedName = "artifact",
+): Promise<DownloadedArtifact> {
+  const response = await fetch(sourceUrl);
+  if (!response.ok) {
+    throw new Error(
+      `Failed to download artifact ${sourceUrl}: ${response.status} ${response.statusText}`,
+    );
+  }
+  const body = new Uint8Array(await response.arrayBuffer());
+  const dir = await mkdtemp(join(tmpdir(), "guarani-"));
+  // The URL is hashed into the name rather than used directly: provider URLs
+  // carry query strings and path separators that do not belong in a filename.
+  const stem = createHash("sha1").update(sourceUrl).digest("hex").slice(0, 12);
+  const path = join(dir, `${suggestedName}-${stem}${extensionFor(sourceUrl)}`);
+  await writeFile(path, body);
+  return {
+    path,
+    contentType: response.headers.get("content-type"),
+    // Swallows its own failure: a temp file that will not delete is not a
+    // reason to fail a job whose audio was already produced and archived.
+    cleanup: () => rm(dir, { recursive: true, force: true }).catch(() => {}),
+  };
+}
+
+/** ffprobe sniffs content, but a sensible extension keeps temp files debuggable. */
+function extensionFor(url: string): string {
+  const match = /\.(wav|mp3|m4a|aac|ogg|flac|mp4|webm)(?:$|\?)/i.exec(url);
+  return match ? `.${match[1].toLowerCase()}` : "";
 }
