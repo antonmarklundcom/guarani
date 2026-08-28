@@ -141,3 +141,6 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# Keep the documented env template tracked (plan §4: missing env vars degrade gracefully)
+!.env.example
