@@ -126,7 +126,150 @@ Deploy the web app to Hostinger per `nextjs-deploy-hostinger` (worker stays loca
 
 ## 9. Build log & handoff
 
-(empty — first entry gets appended by opus-1 before its PR merges)
+### opus-1-foundation — 2026-08-28
+
+**Delivered**: full schema (13 tables), provider abstraction + `HiggsfieldAdapter` +
+`MockProvider`, object-storage module with the §4 degradation path, lexicon seed script,
+conformance test suite (16 tests green), Next.js + Drizzle + MySQL scaffold.
+`npm run typecheck`, `npm run lint`, `npm run build` and `npm test` all pass.
+
+#### Diagnostics (run before any generation logic, per §5.1)
+
+Account: plan `creator`, **3924 credits** at phase start.
+
+**Voice inventory** (`list_voices`): 100+ presets returned, paginated (`has_more: true`).
+Two findings that matter more than the count:
+
+- **Zero `element` voices exist** — i.e. no cloned voice in the workspace yet. This
+  confirms the §7 human input is still outstanding and that opus-2 must build against a
+  preset voice, exactly as the plan anticipated.
+- **No Guaraní voice, and barely any Spanish one.** The preset roster is overwhelmingly
+  Anglophone (Grady, Ainsley, Holden…). The Spanish-leaning presets are `Ines`,
+  `Marisol`, and `Elena`. Every gate sample below used `Marisol`
+  (`75e72cd5-011b-4130-a474-e8b1ab341f04`) held constant, so engine is the only variable.
+
+**Cost preflight** (`get_cost: true`, one ~90-character jopara sentence, credits per call):
+
+| Engine | Model / variant | Credits |
+|---|---|---|
+| cozy_voice | text2speech_v2 | 0.1 |
+| seed_speech | text2speech_v2 | 0.2 |
+| vibe_voice | text2speech_v2 | 0.2 |
+| elevenlabs | text2speech_v2 | 0.3 |
+| minimax | text2speech_v2 | 0.3 |
+| seed_audio | seed_audio (default) | 0.5 |
+
+Useful early number for §8: at ~0.3 credits per line, a 12-line bilingual listing video
+costs roughly **7 credits of TTS** (both languages), before any generative visuals.
+Video generation is the expensive part and is not measured until opus-4.
+
+**Confirmed by observation, not assumption**: results come back as a bare URL with **no
+timing metadata of any kind**. This is exactly why §3.3 measures durations locally with
+ffprobe — there is nothing to trust even if we wanted to.
+
+#### Go/no-go gate — Guaraní/jopara synthesis
+
+Three real jopara real-estate sentences × four candidate engines = 12 jobs, all
+completed (one 429 on submit, succeeded on retry — see KNOWN-ISSUES #5). Total spend
+**~3.9 credits**.
+
+- **S1** — `Ko óga porã oĩ Barrio San Vicente-pe, orekóva mbohapy koty ha mokõi baño.`
+- **S2** — `Ovende hína ochocientos cincuenta millones de guaraníes rehe, ha ikatu reñe'ẽ oreve WhatsApp rupive.`
+- **S3** — `Oguereko ciento veinte metros cuadrados, garaje ha jardín tuicháva.`
+
+S2 deliberately spells the price out in words rather than digits — an early probe of the
+§3.1 verbalization requirement. S1 contains the nasal vowels (`õ`, `ã`), the `/ɨ/` in
+`mbohapy`, and a multi-word proper noun the opus-2 tokenizer will have to longest-match.
+
+| # | Engine | Sentence | Result URL |
+|---|---|---|---|
+| 0 | seed_audio | S1 | `hf_20260828_130310_6dbe313b-0d5f-4986-972d-c48d4bc49b03.wav` |
+| 1 | elevenlabs | S1 | `hf_20260828_130310_05bd2a09-fb63-492c-9912-9e1dbfe797b4.mp3` |
+| 2 | minimax | S1 | `hf_20260828_130310_acbef6d4-d2c7-41a4-9531-d3727b1c5948.mp3` |
+| 3 | seed_speech | S1 | `hf_20260828_130311_22c8e819-c37f-4ee2-bbdf-a1faf2f5f786.mp3` |
+| 4 | seed_audio | S2 | `hf_20260828_130310_f4031a25-8f8b-4c9b-b2dd-0273c4614a54.wav` |
+| 5 | elevenlabs | S2 | `hf_20260828_130310_d240c659-6da9-472a-b2cc-f4f2dae777fd.mp3` |
+| 6 | minimax | S2 | `hf_20260828_130310_f7b4ad5f-4d1c-4a31-97ba-e9ee3dd0ee2f.mp3` |
+| 7 | seed_speech | S2 | `hf_20260828_130340_163277ea-3c1f-4f50-90bb-f0e57b70f04a.mp3` |
+| 8 | seed_audio | S3 | `hf_20260828_130310_75bb095a-3232-4b79-9eb3-e2edb2c09a39.wav` |
+| 9 | elevenlabs | S3 | `hf_20260828_130310_f3a829e5-0e82-4f77-8a87-d1e01311ad43.mp3` |
+| 10 | minimax | S3 | `hf_20260828_130311_e8c3b164-228e-4e3f-9421-870fe5452cd8.mp3` |
+| 11 | seed_speech | S3 | `hf_20260828_130310_e33f0986-ccc4-4d74-adce-06bd752a860d.mp3` |
+
+Base: `https://d8j0ntlcm91z4.cloudfront.net/user_349VrHjTFIpx9q71lpfpAXcLXvR/`
+
+#### Gate verdict: OPEN — generation proven, acceptability NOT
+
+This is the one exit criterion opus-1 could not close, and it should not be recorded as
+passed.
+
+**What is settled**: all four engines accept jopara text with nasal vowels, glottal
+stops and `/ɨ/` without erroring, and return audio at a known price. Nothing is
+technically blocked.
+
+**What is not settled**: whether any of it *sounds* acceptable. That judgment requires
+ears, and specifically Guaraní-speaking ears. The build session could not listen — and
+separately, the CDN host is blocked by this environment's egress policy (KNOWN-ISSUES
+#4), so the files could not even be downloaded for archival. **The listening-notes table
+below is deliberately left unfilled rather than filled with invented impressions.**
+
+| # | Engine | Sentence | Nasal vowels | Glottal stop | `/ɨ/` (y) | Stress | Overall (1–5) | Notes |
+|---|---|---|---|---|---|---|---|---|
+| 0 | seed_audio | S1 | | | | | | |
+| 1 | elevenlabs | S1 | | | | | | |
+| 2 | minimax | S1 | | | | | | |
+| 3 | seed_speech | S1 | | | | | | |
+| 4 | seed_audio | S2 | | | | | | |
+| 5 | elevenlabs | S2 | | | | | | |
+| 6 | minimax | S2 | | | | | | |
+| 7 | seed_speech | S2 | | | | | | |
+| 8 | seed_audio | S3 | | | | | | |
+| 9 | elevenlabs | S3 | | | | | | |
+| 10 | minimax | S3 | | | | | | |
+| 11 | seed_speech | S3 | | | | | | |
+
+**Action required from Anton before opus-2 is worth running**: open the 12 URLs, fill
+the table, and make the go/no-go call. Per §5.1 this is the bet the whole product rests
+on — if nothing is acceptable even with hand-tuned respellings, stop the build here
+rather than after four more phases. Ideally the fluent-speaker input from §7 is in place
+for this; if not, Anton's own judgment on "would I send this to an agent" is a valid
+first filter, with speaker verification still required before anything ships.
+
+Note this is a *floor*, not the real test: these are stock preset voices reading raw
+orthography with no lexicon respellings applied. The production path (cloned voice +
+tuned `speech_text`) should sound better than what is in these files.
+
+#### Schema notes
+
+13 tables in `drizzle/0000_opus1_foundation.sql`, complete per §2 — later phases never
+migrate. Three choices worth flagging for opus-2:
+
+- `script_lines` is a separate table rather than JSON on `scripts`, because opus-2
+  synthesizes and measures **per line** and needs a stable row to hang a
+  `generation_jobs.input_ref` on.
+- `listing_media` was added (not named explicitly in §2) — opus-3 composites existing
+  listing photos and needs somewhere to put them. Adding it now avoids a Sonnet-phase
+  migration request later.
+- `projects.kind` is modeled as `['listing','content_item']` rather than the `listing`-only
+  enum §2 describes. Widening a MySQL enum is a migration, and later phases are
+  forbidden from migrating — so the §11 content-service value is included now while it
+  is free. Nothing reads or writes `content_item` in this phase.
+- `lexicon_pronunciations` uses `engine` as a plain string with `'default'` as the
+  fallback row, not an enum: engine names are provider vocabulary and enumerating them
+  in the schema would make adding a provider a migration.
+
+#### Where opus-2 should look first
+
+1. `src/providers/types.ts` — the interfaces and result types. Read this before writing
+   any orchestration; the result types *are* the abstraction.
+2. KNOWN-ISSUES #1 — the Higgsfield transport wire format is an educated guess. Confirm
+   it against real API docs **before** the first production call.
+3. `scripts/seed-lexicon.ts` — 24 seeded terms with `default`-engine pronunciations, all
+   `verified: false`. The A/B harness writes per-engine rows alongside them.
+4. Retry-with-backoff on batch submission (KNOWN-ISSUES #5) is needed before the harness
+   submits jobs in parallel.
+5. The gate table above must be filled in before opus-2's work has a foundation worth
+   building on.
 
 ## 10. Backlog
 
