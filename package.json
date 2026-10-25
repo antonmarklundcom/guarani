@@ -19,7 +19,7 @@
     "@aws-sdk/client-s3": "^3.1120.0",
     "drizzle-orm": "^0.45.2",
     "mysql2": "^3.24.2",
-    "next": "16.3.3",
+    "next": "16.4.1",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   },
@@ -31,10 +31,13 @@
     "dotenv": "^17.4.2",
     "drizzle-kit": "^0.31.10",
     "eslint": "^9",
-    "eslint-config-next": "16.3.3",
+    "eslint-config-next": "16.4.1",
     "tailwindcss": "^4",
     "tsx": "^4.23.12",
     "typescript": "^5",
     "vitest": "^4.1.11"
+  },
+  "overrides": {
+    "sharp": "^0.35.5"
   }
 }
